@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 
+void editorMoveCursor(char key);
 
 /* DEFINES */
 /* 0x00011111 & key */
@@ -214,8 +215,10 @@ void editorRefreshScreen()
 
     editorDrawRows(&ab);
 
-    abAppend(&ab,"\x1b[H", 3);
-    abAppend(&ab,"\x1b[?25l", 6); // show cursor
+    char buf[32] = {};
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    abAppend(&ab, buf, strlen(buf));
+    abAppend(&ab,"\x1b[?25h", 6); // show cursor
 
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
@@ -223,22 +226,52 @@ void editorRefreshScreen()
 
 
 /* INPUT */
-
 void editorProcessKeypress()
 {
     char c = editorReadKey();
 
     switch(c)
     {
-        case CTRL_KEY('q'):
+	case CTRL_KEY('q'):
         {
             write(STDOUT_FILENO, "\x1b[H",3);
             write(STDOUT_FILENO, "\x1b[2J", 4);
             exit(0);
         } break;
+
+	case 'w':
+	case 's':
+	case 'a':
+	case 'd':
+	{
+	    editorMoveCursor(c);
+	} break;
     }
 }
 
+void editorMoveCursor(char key)
+{
+    switch (key)
+    {
+	case 'a':
+	{
+	    E.cx--;
+	} break;
+	case 'd':
+	{
+	    E.cx++;
+	} break;
+	case 'w':
+	{
+	    E.cy--;
+	} break;
+
+	case 's':
+	{
+	    E.cy++;
+	} break;
+    }
+}
 
 /* INIT */
 void initEditor()
@@ -252,7 +285,6 @@ void initEditor()
     }
  
 }
-
 
 int main()
 {
