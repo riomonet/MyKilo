@@ -1,17 +1,21 @@
-//(setq c-basic-offset 4)
+
 //(c-set-offset 'case-label 4)
 //https://vt100.net/docs/vt100-ug/chapter3.html#ED
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <ctype.h>
 #include <errno.h>
 #include <sys/ioctl.h>
 
+
 /* DEFINES */
 /* 0x00011111 & key */
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define ABUF_INIT {NULL, 0}
+
 
 /* DATA */
 struct editorConfig
@@ -19,6 +23,12 @@ struct editorConfig
     int screenrows;
     int screencols;
     termios orig_termios;
+};
+
+struct abuf
+{
+    char *b;
+    int len;
 };
 
 editorConfig E;
@@ -86,7 +96,7 @@ int getCursorPostion(int *rows, int *cols)
     unsigned int i = 0;
 
     // queries for cursor postion n command
-    if (write (STDOUT_FILENO, "x1b[6n", 4) != 4)
+    if (write (STDOUT_FILENO, "\x1b[6n", 4) != 4)
     {
         return -1;
     }
@@ -97,28 +107,26 @@ int getCursorPostion(int *rows, int *cols)
         if(buf[i]  == 'R') break;
         i++;
     }
+    /* replace th R with NULL string terminator */
     buf[i] = '\0';
-    
-    editorReadKey();
-    return -1;
+
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d",rows,cols) != 2) return -1;
+
+    return 0;
 }
 
 int getWindowSize(int *rows, int *cols)
 {
     struct winsize ws;
 
-    if(1)
-    {
-        if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
-        {
-            return -1;
-        }
-        return getCursorPostion(rows, cols);
-    }
-    #ifdef stop
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
     {
-        return -1;
+	if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
+	{
+	    return -1;
+	}
+	return getCursorPostion(rows, cols);
     }
     else
     {
@@ -126,26 +134,61 @@ int getWindowSize(int *rows, int *cols)
         *rows = ws.ws_row;
         return 0;
     }
-    #endif
 }
 
+/* APPEND BUFFER */
+
+
+void abAppend(abuf *ab, const char *s, int len)
+{
+    char *n =  (char *)realloc(ab->b, ab->len + len);
+
+    if (n == NULL) return;
+    memcpy(&n[ab->len],s, len);
+    ab->b = n;
+    ab->len += len;
+}
+
+void abFree(struct abuf *ab)
+{
+    free(ab->b);
+}
+
+
 /* OUTPUT */
-void editorDrawRows()
+void editorDrawRows(abuf *ab)
 {
     int y;
     for (y = 0; y < E.screenrows; y++)
     {
-        write(STDOUT_FILENO, "~\r\n", 3);
+	abAppend(ab, "~", 1);
+	abAppend(ab, "\x1b[K", 3); // clears rest of line
+	// 2 erases whole line
+	// 1 erases to the left of the cursor
+	// 0 erases to the right this is defualt
+
+	if(y < E.screenrows - 1)
+	{
+	    abAppend(ab,"\r\n", 2);
+	}
     }
 }
 
 void editorRefreshScreen()
 {
-    write(STDOUT_FILENO,"\x1b[H", 3);
-    write(STDOUT_FILENO,"\x1b[2J", 4);
-    editorDrawRows();
-    write(STDOUT_FILENO,"\x1b[H", 3);
+    abuf ab = ABUF_INIT;
 
+    abAppend(&ab,"\x1b[?25l", 6); // hide cursor
+    // abAppend(&ab,"\x1b[2J", 4); //clear screen
+    abAppend(&ab,"\x1b[H", 3); // set curson pos
+
+    editorDrawRows(&ab);
+
+    abAppend(&ab,"\x1b[H", 3);
+    abAppend(&ab,"\x1b[?25l", 6); // show cursor
+
+    write(STDOUT_FILENO, ab.b, ab.len);
+    abFree(&ab);
 }
 
 
@@ -165,6 +208,7 @@ void editorProcessKeypress()
         } break;
     }
 }
+
 
 /* INIT */
 void initEditor()
