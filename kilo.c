@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 
-void editorMoveCursor(char key);
+void editorMoveCursor(int key);
 
 /* DEFINES */
 /* 0x00011111 & key */
@@ -18,6 +18,17 @@ void editorMoveCursor(char key);
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
 
+
+
+enum editorkey
+{
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN
+};
+
+    
 /* DATA */
 struct editorConfig
 {
@@ -79,7 +90,7 @@ void enableRawMode()
     }
 }
 
-char editorReadKey()
+int editorReadKey()
 {
     int nread;
     char c;
@@ -90,7 +101,38 @@ char editorReadKey()
             die("read");
         }
     }
-    return c;
+
+    if (c == '\x1b')
+    {
+	char seq[3] = {};
+
+	if (read(STDIN_FILENO, &seq[0] , 1) != 1)
+	{
+	    return '\x1b';
+	}
+
+	if (read(STDIN_FILENO, &seq[1] , 1) != 1)
+	{
+	    return '\x1b';
+	}
+
+	if (seq[0] == '[')
+	{
+	    switch (seq[1])
+	    {
+		case 'A': return  ARROW_UP;
+		case 'B': return  ARROW_DOWN;
+		case 'C': return  ARROW_RIGHT;
+		case 'D': return  ARROW_LEFT;
+	    }
+	}
+	
+	return '\x1b';	
+    }
+    else
+    {
+	return c;	
+    }
 }
 
 int getCursorPostion(int *rows, int *cols)
@@ -209,7 +251,7 @@ void editorRefreshScreen()
 {
     abuf ab = ABUF_INIT;
 
-    abAppend(&ab,"\x1b[?25l", 6); // hide cursor
+    abAppend(&ab,"\x1b[?25l", 6); // hide cursor/not in vterm
     // abAppend(&ab,"\x1b[2J", 4); //clear screen
     abAppend(&ab,"\x1b[H", 3); // set curson pos
 
@@ -218,7 +260,7 @@ void editorRefreshScreen()
     char buf[32] = {};
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
     abAppend(&ab, buf, strlen(buf));
-    abAppend(&ab,"\x1b[?25h", 6); // show cursor
+    abAppend(&ab,"\x1b[?25h", 6); // show cursor/not in vterm
 
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
@@ -228,7 +270,7 @@ void editorRefreshScreen()
 /* INPUT */
 void editorProcessKeypress()
 {
-    char c = editorReadKey();
+    int c = editorReadKey();
 
     switch(c)
     {
@@ -239,34 +281,34 @@ void editorProcessKeypress()
             exit(0);
         } break;
 
-	case 'w':
-	case 's':
-	case 'a':
-	case 'd':
+	case ARROW_UP:
+	case ARROW_DOWN:
+	case ARROW_LEFT:
+	case ARROW_RIGHT:
 	{
 	    editorMoveCursor(c);
 	} break;
     }
 }
 
-void editorMoveCursor(char key)
+void editorMoveCursor(int key)
 {
     switch (key)
     {
-	case 'a':
+	case ARROW_LEFT:
 	{
 	    E.cx--;
 	} break;
-	case 'd':
+	case ARROW_RIGHT:
 	{
 	    E.cx++;
 	} break;
-	case 'w':
+	case ARROW_UP:
 	{
 	    E.cy--;
 	} break;
 
-	case 's':
+	case ARROW_DOWN:
 	{
 	    E.cy++;
 	} break;
