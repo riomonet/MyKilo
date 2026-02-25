@@ -29,15 +29,15 @@ void editorMoveCursor(int key);
 
 enum editorkey
 {
-	ARROW_LEFT = 1000,
-	ARROW_RIGHT,
-	ARROW_UP,
-	ARROW_DOWN,
-	DEL_KEY,
-	HOME_KEY,
-	END_KEY,
-	PAGE_UP,
-	PAGE_DOWN
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DEL_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
 };
 
     
@@ -45,25 +45,26 @@ enum editorkey
 
 struct erow
 {
-	int size;
-	char *chars;
+    int size;
+    char *chars;
 }; 
 
         
 struct editorConfig
 {
-	int cx,cy;
-	int screenrows;
-	int screencols;
-	int numrows;
-	erow row;
-	termios orig_termios;
+    int cx,cy;
+    int rowoff;
+    int screenrows;
+    int screencols;
+    int numrows;
+    erow *row;
+    termios orig_termios;
 };
 
 struct abuf
 {
-	char *b;
-	int len;
+    char *b;
+    int len;
 };
 
 editorConfig E;
@@ -72,44 +73,44 @@ editorConfig E;
 /* TERMINAL */
 void die(const char *s)
 {
-	// clears screen in case of error as wellx
-	write(STDOUT_FILENO, "\x1b[H",3);
-	write(STDOUT_FILENO, "\x1b[2J",4);
+    // clears screen in case of error as wellx
+    write(STDOUT_FILENO, "\x1b[H",3);
+    write(STDOUT_FILENO, "\x1b[2J",4);
     
-	perror(s);
-	printf("\r");
-	exit(1);
+    perror(s);
+    printf("\r");
+    exit(1);
 }
 void disableRawMode()
 {
-	if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
-	{
-		die("tcgetattr");
-	}
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
+    {
+	die("tcgetattr");
+    }
 }
 
 void enableRawMode()
 {
 
-	if (tcgetattr(STDIN_FILENO,&E.orig_termios) == -1)
-	{
-		die("tcgetaddr");
-	}
-	atexit(disableRawMode);
+    if (tcgetattr(STDIN_FILENO,&E.orig_termios) == -1)
+    {
+	die("tcgetaddr");
+    }
+    atexit(disableRawMode);
 
-	termios raw = E.orig_termios;
+    termios raw = E.orig_termios;
 
-	raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-	raw.c_oflag &= ~(OPOST);
-	raw.c_cflag |= (CS8);
-	raw.c_lflag &= ~(ECHO | ICANON |IEXTEN| ISIG);
-	raw.c_cc[VMIN] = 0;           // min bytes to read prior to return
-	raw.c_cc[VTIME] = 1;      // the max amount of time to wait for bytes 10ths of second
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    raw.c_oflag &= ~(OPOST);
+    raw.c_cflag |= (CS8);
+    raw.c_lflag &= ~(ECHO | ICANON |IEXTEN| ISIG);
+    raw.c_cc[VMIN] = 0;           // min bytes to read prior to return
+    raw.c_cc[VTIME] = 1;      // the max amount of time to wait for bytes 10ths of second
   
-	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
-	{
-		die("tcsetattr");
-	}
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+    {
+	die("tcsetattr");
+    }
 }
 
 int editorReadKey()
@@ -191,66 +192,80 @@ int editorReadKey()
 
 int getCursorPostion(int *rows, int *cols)
 {
-	char buf[32] = {};
-	unsigned int i = 0;
+    char buf[32] = {};
+    unsigned int i = 0;
 
-	// queries for cursor postion n command
-	if (write (STDOUT_FILENO, "\x1b[6n", 4) != 4)
-	{
-		return -1;
-	}
+    // queries for cursor postion n command
+    if (write (STDOUT_FILENO, "\x1b[6n", 4) != 4)
+    {
+	return -1;
+    }
 
-	while (i < (sizeof(buf) - 1))
-	{
-		if(read (STDIN_FILENO, &buf[i], 1) != 1) break;
-		if(buf[i]  == 'R') break;
-		i++;
-	}
-	/* replace th R with NULL string terminator */
-	buf[i] = '\0';
+    while (i < (sizeof(buf) - 1))
+    {
+	if(read (STDIN_FILENO, &buf[i], 1) != 1) break;
+	if(buf[i]  == 'R') break;
+	i++;
+    }
+    /* replace th R with NULL string terminator */
+    buf[i] = '\0';
 
-	if (buf[0] != '\x1b' || buf[1] != '[') return -1;
-	if (sscanf(&buf[2], "%d;%d",rows,cols) != 2) return -1;
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d",rows,cols) != 2) return -1;
 
-	return 0;
+    return 0;
 }
 
 int getWindowSize(int *rows, int *cols)
 {
-	struct winsize ws;
+    struct winsize ws;
 
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
+    {
+	if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
 	{
-		if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
-		{
-			return -1;
-		}
-		return getCursorPostion(rows, cols);
+	    return -1;
 	}
-	else
-	{
-		*cols = ws.ws_col;
-		*rows = ws.ws_row;
-		return 0;
-	}
+	return getCursorPostion(rows, cols);
+    }
+    else
+    {
+	*cols = ws.ws_col;
+	*rows = ws.ws_row;
+	return 0;
+    }
 }
+
+/* ROW OPERATIONS */
+void editorAppendRow(char *s, size_t len)
+{
+    E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+    int at = E.numrows;
+    E.row[at].size = len;
+    E.row[at].chars = (char*) malloc(len + 1);
+    memcpy(E.row[at].chars,s,len);
+    E.row[at].chars[len] = '\0';
+    E.numrows++;
+}
+
 
 /* APPEND BUFFER */
 
 
 void abAppend(abuf *ab, const char *s, int len)
 {
-	char *n =  (char *)realloc(ab->b, ab->len + len);
+    char *n =  (char *)realloc(ab->b, ab->len + len);
 
-	if (n == NULL) return;
-	memcpy(&n[ab->len],s, len);
-	ab->b = n;
-	ab->len += len;
+    if (n == NULL) return;
+    memcpy(&n[ab->len],s, len);
+    ab->b = n;
+    ab->len += len;
 }
 
 void abFree(struct abuf *ab)
 {
-	free(ab->b);
+    free(ab->b);
 }
 
 
@@ -260,7 +275,8 @@ void editorDrawRows(abuf *ab)
     int y;
     for (y = 0; y < E.screenrows; y++)
     {
-	if (y >= E.numrows)
+	int filerow =  y + E.rowoff;
+	if (filerow >= E.numrows)
 	{
 	    //NOTE(ari); numrows is the num of rows in the text buffer
 	    if(E.numrows == 0 && y == E.screenrows / 3) // when we are 1/3 down the screen print Title centered if there is no text buffer
@@ -294,12 +310,12 @@ void editorDrawRows(abuf *ab)
 	}
 	else // all the rows of actual textbuffer get printed first starting at the top 
 	{
-	    int len = E.row.size;
+	    int len = E.row[filerow].size;
 	    if (len > E.screencols) // dont print a row longer than the width of the screen
 	    {
 		len = E.screencols;
 	    }
-	    abAppend(ab, E.row.chars, len); 
+	    abAppend(ab, E.row[filerow].chars, len); 
 	}
 	
 	abAppend(ab, "\x1b[K", 3); // every row gets cleared to the right of what ever is printed
@@ -314,130 +330,160 @@ void editorDrawRows(abuf *ab)
     }
 }
 
+void editorScroll()
+{
+    if (E.cy < E.rowoff)
+    {
+	E.rowoff = E.cy;
+    }
+    if (E.cy >= E.rowoff + E.screenrows)
+    {
+	E.rowoff = E.cy - E.screenrows + 1;
+    }
+}
+
 void editorRefreshScreen()
 {
-	abuf ab = ABUF_INIT;
+    editorScroll();
+    abuf ab = ABUF_INIT;
 
-	abAppend(&ab,"\x1b[?25l", 6); // hide cursor/not in vterm
-	// abAppend(&ab,"\x1b[2J", 4); //clear screen
-	abAppend(&ab,"\x1b[H", 3); // set curson pos
+    abAppend(&ab,"\x1b[?25l", 6); // hide cursor/not in vterm
+    // abAppend(&ab,"\x1b[2J", 4); //clear screen
+    abAppend(&ab,"\x1b[H", 3); // set curson pos
 
-	editorDrawRows(&ab);
+    editorDrawRows(&ab);
 
-	//NOTE:(ari) Applies Globally to all key presses
-	if (E.cy < 0)
-	{
-		E.cy = 0;
-	}
-	if(E.cy > E.screenrows - 1)
-	{	
-		E.cy = E.screenrows;
-	}
-	if(E.cx < 0)
-	{
-		E.cx = 0;
-	}
-	if (E.cx > E.screencols)
-	{
-		E.cx = E.screencols;
-	}
+    /* //NOTE:(ari) Applies Globally to all key presses */
+    /* if (E.cy < 0) */
+    /* { */
+    /* 	E.cy = 0; */
+    /* } */
+    /* if(E.cy > E.screenrows - 1) */
+    /* {	 */
+    /* 	E.cy = E.screenrows; */
+    /* } */
+    /* if(E.cx < 0) */
+    /* { */
+    /* 	E.cx = 0; */
+    /* } */
+    /* if (E.cx > E.screencols) */
+    /* { */
+    /* 	E.cx = E.screencols; */
+    /* } */
     
-	char buf[32] = {};
-	snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
-	abAppend(&ab, buf, strlen(buf));
-	abAppend(&ab,"\x1b[?25h", 6); // show cursor/not in vterm
+    char buf[32] = {};
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    abAppend(&ab, buf, strlen(buf));
+    abAppend(&ab,"\x1b[?25h", 6); // show cursor/not in vterm
 
-	write(STDOUT_FILENO, ab.b, ab.len);
-	abFree(&ab);
+    write(STDOUT_FILENO, ab.b, ab.len);
+    abFree(&ab);
 }
 
 
 /* INPUT */
 void editorProcessKeypress()
 {
-	int c = editorReadKey();
+    int c = editorReadKey();
 
-	switch(c)
+    switch(c)
+    {
+	case CTRL_KEY('q'):
 	{
-	    case CTRL_KEY('q'):
-	    {
-		    write(STDOUT_FILENO, "\x1b[H",3);
-		    write(STDOUT_FILENO, "\x1b[2J", 4);
-		    exit(0);
-	    } break;
+	    write(STDOUT_FILENO, "\x1b[H",3);
+	    write(STDOUT_FILENO, "\x1b[2J", 4);
+	    exit(0);
+	} break;
 
-	    case HOME_KEY:
-	    {
-		    E.cx = 0;
-	    } break;
+	case HOME_KEY:
+	{
+	    E.cx = 0;
+	} break;
 
-	    case END_KEY:
-	    {
-		    E.cx = E.screencols - 1;
-	    } break;
+	case END_KEY:
+	{
+	    E.cx = E.screencols - 1;
+	} break;
 
-	    case PAGE_UP:
-	    case PAGE_DOWN:
-	    {
-		    int times = E.screenrows;
-		    while (times--)
-			    editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-	    } break;
+	case PAGE_UP:
+	case PAGE_DOWN:
+	{
+	    int times = E.screenrows;
+	    while (times--)
+		editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+	} break;
 
-	    case DEL_KEY:
-	    {}break;
+	case DEL_KEY:
+	{}break;
 	    
-	    case ARROW_UP:
-	    case ARROW_DOWN:
-	    case ARROW_LEFT:
-	    case ARROW_RIGHT:
-	    {
-		    editorMoveCursor(c);
-	    } break;
-	}
+	case ARROW_UP:
+	case ARROW_DOWN:
+	case ARROW_LEFT:
+	case ARROW_RIGHT:
+	{
+	    editorMoveCursor(c);
+	} break;
+    }
 }
 
 void editorMoveCursor(int key)
 {
-	switch (key)
+    switch (key)
+    {
+	case ARROW_LEFT:
 	{
-	    case ARROW_LEFT:
+	    if (E.cx != 0)
+	    {	
+		E.cx--;
+	    }    
+	} break;
+	
+	case ARROW_RIGHT:
+	{
+	    if(E.cx != E.screencols - 1)
 	    {
-		    E.cx--;
-	    } break;
-	    case ARROW_RIGHT:
+		E.cx++;
+	    }
+	} break;
+	
+	case ARROW_UP:
+	{
+	    if(E.cy != 0)
 	    {
-		    E.cx++;
-	    } break;
-	    case ARROW_UP:
-	    {
-		    E.cy--;
-	    } break;
+		E.cy--;
+	    }
+	} break;
 
-	    case ARROW_DOWN:
+	case ARROW_DOWN:
+	{
+	    if(E.cy < E.numrows)
 	    {
-		    E.cy++;
-	    } break;
-	}
+		E.cy++;
+	    }
+	} break;
+    }
 }
 
 /* INIT */
 void initEditor()
 {
-	E.cx = 0;
-	E.cy = 0;
-	E.numrows = 0;
-    
-	if (getWindowSize(&E.screenrows, &E.screencols) == -1)
-	{
-		die("getWindowsSize");
-	}
+    E.cx = 0;
+    E.cy = 0;
+    E.numrows = 0;
+    E.row = NULL;
+    E.rowoff = 0;
+	
+    if (getWindowSize(&E.screenrows, &E.screencols) == -1)
+    {
+	die("getWindowsSize");
+    }
 }
 
 /* FILE I/O */
 void editorOpen(const char *filename)
 {
     FILE *fp = fopen(filename, "r");
+
     if(!fp)
     {
 	die("fopen");
@@ -447,37 +493,34 @@ void editorOpen(const char *filename)
     size_t linecap = 0;
     ssize_t linelen = 0;
     //getline allocates on our behalf
-    linelen = getline(&line,&linecap, fp);
-    if (linelen != -1 )
+    while ((linelen = getline(&line,&linecap, fp)) != -1)
     {
 	//exclude any trailing newline/cr from length of line.
 	while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
 	{
 	    linelen--;
 	}
-	E.row.size = linelen;
-	E.row.chars = (char*) malloc(linelen + 1);
-	memcpy(E.row.chars,line, linelen);
-	E.row.chars[linelen] = '\0';
-	E.numrows = 1;
+	editorAppendRow(line, linelen);
     }
     free(line);
     fclose(fp);
 }
 
+
+
 int main(int argc, char *argv[])
 {
-	enableRawMode();
-	initEditor();
-	if (argc >= 2)
-	{
-	    editorOpen(argv[1]);
-	}
+    enableRawMode();
+    initEditor();
+    if (argc >= 2)
+    {
+	editorOpen(argv[1]);
+    }
 	
-	while (1)
-	{
-	    editorRefreshScreen();
-	    editorProcessKeypress();
-	}
-	return 0;
+    while (1)
+    {
+	editorRefreshScreen();
+	editorProcessKeypress();
+    }
+    return 0;
 } 
