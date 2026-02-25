@@ -1,6 +1,11 @@
 //(setq c-basic-offset 4)
 //(C-set-offset 'case-label 4)
 //https://vt100.net/docs/vt100-ug/chapter3.html#ED
+
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+
+
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
@@ -15,6 +20,8 @@ void editorMoveCursor(int key);
 
 /* DEFINES */
 /* 0x00011111 & key */
+
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
@@ -254,8 +261,9 @@ void editorDrawRows(abuf *ab)
     for (y = 0; y < E.screenrows; y++)
     {
 	if (y >= E.numrows)
-	{	    
-	    if(y == E.screenrows / 3) // when we are 1/3 down the screen print Title centered
+	{
+	    //NOTE(ari); numrows is the num of rows in the text buffer
+	    if(E.numrows == 0 && y == E.screenrows / 3) // when we are 1/3 down the screen print Title centered if there is no text buffer
 	    {
 		char welcome[80];
 		int welcomelen = snprintf(welcome, sizeof(welcome),
@@ -424,33 +432,52 @@ void initEditor()
 	{
 		die("getWindowsSize");
 	}
- 
 }
 
 /* FILE I/O */
-
-void editorOpen()
+void editorOpen(const char *filename)
 {
-	const char *line = "Hello, World!";
-	ssize_t linelen = 13;
+    FILE *fp = fopen(filename, "r");
+    if(!fp)
+    {
+	die("fopen");
+    }
 
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen = 0;
+    //getline allocates on our behalf
+    linelen = getline(&line,&linecap, fp);
+    if (linelen != -1 )
+    {
+	//exclude any trailing newline/cr from length of line.
+	while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
+	{
+	    linelen--;
+	}
 	E.row.size = linelen;
-	E.row.chars = (char *)malloc (linelen + 1);
-	memcpy(E.row.chars, line, linelen);
+	E.row.chars = (char*) malloc(linelen + 1);
+	memcpy(E.row.chars,line, linelen);
 	E.row.chars[linelen] = '\0';
-	E.numrows=1;
+	E.numrows = 1;
+    }
+    free(line);
+    fclose(fp);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
 	enableRawMode();
 	initEditor();
-
+	if (argc >= 2)
+	{
+	    editorOpen(argv[1]);
+	}
+	
 	while (1)
 	{
-		editorRefreshScreen();
-		editorProcessKeypress();
-		editorOpen();
+	    editorRefreshScreen();
+	    editorProcessKeypress();
 	}
 	return 0;
 } 
